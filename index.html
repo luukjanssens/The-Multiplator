@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>THE MULTIPLATOR</title>
+		<meta charset="utf-8">
+		<link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+		<link rel="icon" href="/favicon.ico" type="image/x-icon">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				background-color: #ffffff;
+				margin: 0;
+				overflow: hidden;
+				font-family: sans-serif;
+				cursor: wait;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="canvas-container"></div>
+
+		<script src="js/three.min.js"></script>
+		<script src="js/threeinteraction.js"></script>
+
+		<script id="vertexShader" type="x-shader/x-vertex">
+			void main() {
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+			}
+		</script>
+
+		<script id="fragmentShader" type="x-shader/x-fragment">
+			uniform vec2 u_resolution;
+			uniform sampler2D u_texture_1;
+			uniform sampler2D u_texture_2;
+			uniform vec2 st;
+
+			void main() {
+				vec2 st = gl_FragCoord.st/u_resolution.xy;
+				vec2 st2 = st;
+
+				st.x -= .1;
+				st.y -= .1;
+
+				vec3 pattern_1 = vec3(0.0);
+				vec3 pattern_2 = vec3(0.0);
+				vec4 texture_1 = texture2D(u_texture_1, st);
+				vec4 texture_2 = texture2D(u_texture_2, st2);
+				pattern_1 += texture_1.xyz;
+				pattern_2 += texture_2.xyz;
+				vec3 print = abs(pattern_1 - pattern_2);
+
+				if(all(greaterThan(print, vec3(0.25)))) {
+					print = vec3(0.08);
+				} else {
+					print = vec3(1);
+				}
+
+				vec4 texture = vec4(print, 1.0);
+				gl_FragColor = texture;
+			}
+		</script>
+
+		<script>
+			let SCENE;
+			let CAMERA;
+			let RENDERER;
+			let INTERACTION;
+
+			let uniforms;
+			let imageNumbers;
+			let image1, image2;
+
+			const canvasContainer = document.querySelector('.canvas-container');
+			const textureLoader = new THREE.TextureLoader();
+
+			function reload() { window.setTimeout(window.location.reload.bind(window.location), 100);};
+			function setCursor(type) { canvasContainer.style.cursor = type;};
+			function saveAsImage() {
+				try {
+					const strMime = 'image/jpeg';
+					const imgData = RENDERER.domElement.toDataURL(strMime);
+
+					saveFile(imgData.replace(strMime, 'image/octet-stream'), `${image1}+${image2}.jpg`);
+				} catch (e) {
+					console.log(e);
+					return;
+				}
+			}
+
+			function saveFile(strData, filename) {
+				const link = document.createElement('a');
+
+				if (typeof link.download === 'string') {
+					document.body.appendChild(link);
+					link.download = filename;
+					link.href = strData;
+					link.click();
+					document.body.removeChild(link);
+				} else {
+					location.replace(uri);
+				}
+			}
+
+			main();
+
+			function main() {
+				init();
+				animate();
+			}
+
+			function init() {
+				initScene();
+				initCamera();
+				initRenderer();
+				initInteraction();
+				initTextures();
+				initEventListeners();
+				onWindowResize();
+				createObjects();
+			}
+
+			function initScene() { SCENE = new THREE.Scene();}
+
+			function initCamera() {
+				const zoom = 2;
+
+				CAMERA = new THREE.OrthographicCamera(
+					window.innerWidth / - zoom,
+					window.innerWidth / zoom,
+					window.innerHeight / zoom,
+					window.innerHeight / - zoom,
+					-1000,
+					1000
+				);
+				CAMERA.position.z = 500;
+			}
+
+			function initRenderer() {
+				RENDERER = new THREE.WebGLRenderer({ alpha: true });
+				RENDERER.setPixelRatio(window.devicePixelRatio);
+				RENDERER.setSize(window.innerWidth, window.innerHeight);
+				RENDERER.shadowMap.enabled = true;
+				RENDERER.shadowMapSort = true;
+				RENDERER.setClearColor(0xFFF000, 1);
+
+				canvasContainer.appendChild(RENDERER.domElement);
+			}
+
+			function initTextures() {
+				const getRandomInt =  max => Math.min( max, Math.floor(Math.random() * max + 1) );
+
+				image1 = getRandomInt(250);
+				image2 = getRandomInt(250);
+
+				const zerofilled1 = ('000'+image1).slice(-3);
+				const zerofilled2 = ('000'+image2).slice(-3);
+
+				const texture1 = textureLoader.load( `./img/feed_image${image1}.jpg` );
+				const texture2 = textureLoader.load( `./img/feed_image${image2}.jpg` );
+
+				texture1.minFilter = THREE.LinearFilter;
+				texture2.minFilter = THREE.LinearFilter;
+
+				imageNumbers = `${zerofilled1} + ${zerofilled2}`;
+
+				uniforms = {
+					u_resolution: { type: "v2", value: new THREE.Vector2() },
+					u_texture_1: { type: "t", value: texture1 },
+					u_texture_2: { type: "t", value: texture2 },
+				};
+			}
+
+			function initInteraction() {
+				INTERACTION = new THREE.Interaction(RENDERER, SCENE, CAMERA);
+			}
+
+			function initEventListeners() {
+				window.addEventListener('resize', onWindowResize);
+				onWindowResize();
+			}
+
+			function onWindowResize() {
+				uniforms.u_resolution.value.x = RENDERER.domElement.width;
+				uniforms.u_resolution.value.y = RENDERER.domElement.height;
+				CAMERA.updateProjectionMatrix();
+
+				RENDERER.setSize(window.innerWidth, window.innerHeight);
+			}
+
+			function animate() {
+				requestAnimationFrame(animate);
+				render();
+			}
+
+			function render() {
+				uniforms.u_resolution.value.x = RENDERER.domElement.width;
+				uniforms.u_resolution.value.y = RENDERER.domElement.height;
+
+				RENDERER.render(SCENE, CAMERA);
+			}
+
+			function createObjects() {
+				const geometry = new THREE.PlaneBufferGeometry(window.innerWidth, window.innerHeight);
+				const material = new THREE.ShaderMaterial({
+					uniforms: uniforms,
+					vertexShader: document.getElementById('vertexShader').textContent,
+					fragmentShader: document.getElementById('fragmentShader').textContent,
+				});
+
+				const painting = new THREE.Mesh( geometry, material );
+				painting.position.setZ = 0;
+				painting.on('click', reload);
+
+				SCENE.add(painting);
+
+				// text-box
+				const textBox = new THREE.Group();
+
+				// white box
+				const boxWidth = 120;
+				const boxHeight = 35;
+				const offset = 10;
+				const boxGeometry = new THREE.PlaneBufferGeometry(boxWidth, boxHeight);
+				const boxMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+				const box = new THREE.Mesh( boxGeometry, boxMaterial );
+				box.position.set(0, 0, 1);
+				textBox.add(box);
+
+				// image numbers in white box
+				const fontLoader = new THREE.FontLoader();
+				fontLoader.load('fonts/helvetiker_regular.typeface.json', function(font){
+					const textMaterial = new THREE.MeshBasicMaterial({ color: 0x141414 });
+					const textGeometry = new THREE.TextGeometry(imageNumbers, {
+						font: font,
+						size: 14,
+						height: 0,
+						curveSegments: 6,
+					});
+
+					const text = new THREE.Mesh(textGeometry, textMaterial);
+					text.position.set( -53, -8 , 2);
+					textBox.add(text);
+				});
+
+				const textBoxX = window.innerWidth / 2 - boxHeight / 2 - offset;
+				const textBoxY = window.innerHeight / 2 - boxWidth / 2 - offset;
+
+				textBox.position.set( textBoxX, textBoxY , 1);
+				textBox.rotateZ(90 * Math.PI/180);
+				textBox.on('click', saveAsImage);
+				textBox.on('mouseover', () => setCursor('copy'));
+				painting.on('mouseover', () => setCursor('wait'));
+
+				SCENE.add(textBox);
+
+				console.log('%cTHE MULTIPLATOR', 'text-decoration: underline; font-weight: bold; font-size: 50px; color: #242424; text-shadow: 1px 1px 0px #CE5937, -1px 1px 0px #CE5937, -1px -1px 0px #CE5937, 1px -1px 0px #CE5937')
+				console.log(`%c ${imageNumbers} `, 'background-color: white; text-decoration: none; font-weight: normal; font-size:30px; line-height: 1.8em; color: #242424;')
+			}
+		</script>
+	</body>
+</html>
